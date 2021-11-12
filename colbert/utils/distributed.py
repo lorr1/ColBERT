@@ -34,4 +34,4 @@ def barrier(rank):
     nranks = max(1, nranks)
 
     if rank >= 0 and nranks > 1:
-        torch.distributed.barrier(device_ids=[rank % torch.cuda.device_count()])
+        torch.distributed.barrier() #device_ids=[rank % torch.cuda.device_count()])

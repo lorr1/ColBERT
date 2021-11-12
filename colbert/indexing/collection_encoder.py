@@ -15,7 +15,7 @@ class CollectionEncoder():
         if len(passages) == 0:
             return None, None
 
-        with torch.inference_mode():
+        with torch.no_grad():
             embs, doclens = [], []
 
             # Batch here to avoid OOM from storing intermediate embeddings on GPU.
@@ -32,7 +32,7 @@ class CollectionEncoder():
             # embs, doclens = self.checkpoint.docFromText(passages, bsize=self.config.bsize,
             #                                                   keep_dims='flatten', showprogress=(self.config.rank < 1))
 
-        # with torch.inference_mode():
+        # with torch.no_grad():
         #     embs = self.checkpoint.docFromText(passages, bsize=self.config.bsize,
         #                                        keep_dims=False, showprogress=(self.config.rank < 1))
         #     assert type(embs) is list

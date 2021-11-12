@@ -73,7 +73,7 @@ class IndexScorer(IndexLoader, CandidateGeneration):
         return all_pids
 
     def rank(self, config, Q, k):
-        with torch.inference_mode():
+        with torch.no_grad():
             pids = self.retrieve(config, Q)
             scores = self.score_pids(config, Q, pids, k)
 

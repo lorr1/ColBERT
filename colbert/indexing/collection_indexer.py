@@ -33,6 +33,7 @@ class CollectionIndexer():
     def __init__(self, config: ColBERTConfig, collection):
         self.config = config
         self.rank, self.nranks = self.config.rank, self.config.nranks
+        print("Inside collection indexes", self.config, "\n******************\n", collection)
 
         if self.config.rank == 0:
             self.config.help()
@@ -46,26 +47,31 @@ class CollectionIndexer():
         print_memory_stats(f'RANK:{self.rank}')
 
     def run(self, shared_lists):
-        with torch.inference_mode():
+        with torch.no_grad():
+            print("SETUP", self.rank)
             self.setup()
+            print("BARRIER", self.rank, torch.cuda.device_count())
             distributed.barrier(self.rank)
             print_memory_stats(f'RANK:{self.rank}')
 
+            print("TRAIN", self.rank)
             self.train(shared_lists)
             distributed.barrier(self.rank)
             print_memory_stats(f'RANK:{self.rank}')
 
+            print("INDEX", self.rank)
             self.index()
             distributed.barrier(self.rank)
             print_memory_stats(f'RANK:{self.rank}')
 
+            print("FINALIZE", self.rank)
             self.finalize()
             distributed.barrier(self.rank)
             print_memory_stats(f'RANK:{self.rank}')
 
     def setup(self):
         self.num_chunks = int(np.ceil(len(self.collection) / self.collection.get_chunksize()))
-
+        print("Num Chunks", self.num_chunks)
         sampled_pids = self._sample_pids()
         avg_doclen_est = self._sample_embeddings(sampled_pids)
 
@@ -78,6 +84,7 @@ class CollectionIndexer():
         Run().print_main(f'*Estimated* {int(self.num_embeddings_est):,} embeddings.')
 
         self._save_plan()
+        print("DONE WITH SETUP")
 
     def _sample_pids(self):
         num_passages = len(self.collection)
@@ -125,6 +132,7 @@ class CollectionIndexer():
     def _save_plan(self):
         if self.rank < 1:
             config = self.config
+            print("Plan of some sorts: ", config.index_path_)
             self.plan_path = os.path.join(config.index_path_, 'plan.json')
             Run().print("#> Saving the indexing plan to", self.plan_path, "..")
 
@@ -140,11 +148,11 @@ class CollectionIndexer():
     def train(self, shared_lists):
         if self.rank > 0:
             return
-
+        print("INSIDE TRAIN")
         sample, heldout = self._concatenate_and_split_sample()
-
+        print("SAMPKE??", sample)
         centroids = self._train_kmeans(sample, shared_lists)
-
+        print("AFTER KMEANS")
         print_memory_stats(f'RANK:{self.rank}')
         del sample
 
@@ -193,7 +201,8 @@ class CollectionIndexer():
         do_fork_for_faiss = False  # set to True to free faiss GPU-0 memory at the cost of one more copy of `sample`.
 
         args_ = [self.config.dim, self.num_partitions, self.config.kmeans_niters]
-
+        print("ARGS IN KMEANS", args_)
+        print("DO FORK", do_fork_for_faiss)
         if do_fork_for_faiss:
             # For this to work reliably, write the sample to disk. Pickle may not handle >4GB of data.
             # Delete the sample file after work is done.
@@ -377,11 +386,14 @@ class CollectionIndexer():
 
 
 def compute_faiss_kmeans(dim, num_partitions, kmeans_niters, shared_lists, return_value_queue=None):
+    print("INSIDE COMPUTE KMEANS", kmeans_niters)
     kmeans = faiss.Kmeans(dim, num_partitions, niter=kmeans_niters, gpu=True, verbose=True, seed=123)
-
+    print("DONE WITH FAISS SHIT")
     sample = shared_lists[0][0]
     sample = sample.float().numpy()
+    print("BEFORE TRAIN")
     kmeans.train(sample)
+    print("DONE KMEANS TRAIN")
 
     centroids = torch.from_numpy(kmeans.centroids)
 

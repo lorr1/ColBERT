@@ -78,4 +78,5 @@ class Indexer:
         shared_queues = [manager.Queue(maxsize=1) for _ in range(self.config.nranks)]
 
         launcher = Launcher(encode)
+        print("LAUCNHING ::rocket::", self.config, shared_queues, shared_lists)
         launcher.launch(self.config, collection, shared_lists, shared_queues)
