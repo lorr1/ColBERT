@@ -3,8 +3,9 @@ import sys
 import argh
 import numpy as np
 import faiss
+import pickle
 from pathlib import Path
-sys.path.insert(0, '/dfs/scratch0/lorr1/projects/colbert')
+sys.path.insert(0, '../../colbert')
 
 from colbert.infra import Run, RunConfig
 from colbert.data import Queries, Collection
@@ -13,78 +14,46 @@ from rich.console import Console
 
 console = Console(soft_wrap=True)
 
-def test_clustering():
-    d = 64
-    n = 1000
-    rs = np.random.RandomState(123)
-    x = rs.uniform(size=(n, d)).astype('float32')
-
-    x *= 10
-
-    km = faiss.Kmeans(d, 32, niter=10)
-    err32 = km.train(x)
-
-    # check that objective is decreasing
-    prev = 1e50
-    for o in km.obj:
-        assert prev > o
-        prev = o
-
-    km = faiss.Kmeans(d, 64, niter=10)
-    err64 = km.train(x)
-
-    # check that 64 centroids give a lower quantization error than 32
-    assert err32 > err64
-
-    km = faiss.Kmeans(d, 32, niter=10, int_centroids=True)
-    err_int = km.train(x)
-
-    # check that integer centoids are not as good as float ones
-    assert err_int > err32
-    assert np.all(km.centroids == np.floor(km.centroids))
-
-@argh.arg("--data_path")
-@argh.arg("--dataset_name")
-@argh.arg("--query_file")
-@argh.arg("--passage_file")
-@argh.arg("--colbert_checkpoint")
-@argh.arg("--num_gpus", type=int)
+@argh.arg("--dataset_name", help="Name to give to experiment/index")
+@argh.arg("--log_dir", help="Log directory")
+@argh.arg("--query_file", help="Path to query file in tsv")
+@argh.arg("--passage_file", help="Path to passage file in tsv")
+@argh.arg("--index_file", help="Path to saved index file")
+@argh.arg("--colbert_checkpoint", help="Path to colbert checkpoint")
+@argh.arg("--num_gpus", type=int, help="Num gpus")
+@argh.arg("--batch_size", type=int, help="Batch size")
 def main(
-    data_path="/dfs/scratch0/lorr1/projects",
     dataset_name="amber",
-    query_file="colbert_amber_queries.tsv",
-    passage_file="colbert_wikipedia_collection_subset.tsv",
+    log_dir="log_dir",
+    query_file=None,
+    passage_file=None,
+    index_file=None,
     colbert_checkpoint="/dfs/scratch0/okhattab/share/2021/checkpoints/msmarco.psg.kldR2.nway64.ib__colbert-400000/",
     num_gpus=1,
+    batch_size=32,
 ):
-    # test_clustering()
-    data_path = Path(data_path)
-    queries = data_path / query_file
-    collection = data_path / passage_file
-    console.print(f"Loading queries from {queries} and passages from {collection}")
-
-    queries = Queries(path=str(queries))
-    collection = Collection(path=str(collection))
-    console.print(f"Loaded {len(queries)} queries and {len(collection)} passages")
-
-    with Run().context(RunConfig(nranks=num_gpus, experiment=dataset_name)):  # nranks specifies the number of GPUs to use.
+    log_dir = Path(log_dir)
+    if passage_file:
+        collection = Collection(path=passage_file)
+        console.print(f"Loaded {len(collection)} passages to index")
         index_name = f'{dataset_name}.index'
 
-        indexer = Indexer(checkpoint=colbert_checkpoint)  # MS MARCO ColBERT checkpoint
-        indexer.index(name=index_name, collection=collection, overwrite=True)
+        with Run().context(RunConfig(nranks=num_gpus, experiment=dataset_name)):  # nranks specifies the number of GPUs to use.
+            indexer = Indexer(checkpoint=colbert_checkpoint)  # MS MARCO ColBERT checkpoint
+            indexer.index(name=index_name, collection=collection, overwrite=True)
+            index_file = indexer.get_index()
+            print("INDEX FILE", index_file)
 
-        searcher = Searcher(index=index_name)
+    if query_file:
+        assert index_file is not None, f"Must provide index file if pass in query file"
+        searcher = Searcher(index=index_file)
 
-    query = queries[0]   # or supply your own query
-
-    print(f"#> {query}")
-
-    # Find the top-3 passages for this query
-    results = searcher.search(query, k=3)
-
-    # Print out the top-k retrieved passages
-    for passage_id, passage_rank, passage_score in zip(*results):
-        print(f"\t [{passage_rank}] \t\t {passage_score:.1f} \t\t {searcher.collection[passage_id]}")
+        queries = Queries(path=query_file)
+        console.print(f"Loaded {len(queries)} queries")
+        rankings = searcher.search_all(queries, k=5).todict()
+        log_rankings_file = log_dir / dataset_name / "rankings.pkl"
+        log_rankings_file.parent.mkdir(parents=True, exist_ok=True)
+        pickle.dump(rankings, open(str(log_rankings_file), "wb"))
 
 
 if __name__ == "__main__":

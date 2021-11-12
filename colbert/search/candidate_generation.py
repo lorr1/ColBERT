@@ -96,7 +96,8 @@ class CandidateGeneration:
         pids = self.emb2pid[eids.long()].cuda()
 
         sorter = pids.sort()
-        pids, scores = sorter.values, torch.take_along_dim(scores, sorter.indices.unsqueeze(0), dim=-1)
+        # pids, scores = sorter.values, torch.take_along_dim(scores, indices=sorter.indices.unsqueeze(0), dim=-1)
+        pids, scores = sorter.values, torch.gather(input=scores, index=sorter.indices.unsqueeze(0).expand_as(scores), dim=-1)
 
         pids, pids_counts = torch.unique_consecutive(pids, return_counts=True)
         pids, pids_counts = pids.cuda(), pids_counts.cuda()

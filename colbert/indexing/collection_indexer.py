@@ -150,7 +150,6 @@ class CollectionIndexer():
             return
         print("INSIDE TRAIN")
         sample, heldout = self._concatenate_and_split_sample()
-        print("SAMPKE??", sample)
         centroids = self._train_kmeans(sample, shared_lists)
         print("AFTER KMEANS")
         print_memory_stats(f'RANK:{self.rank}')
@@ -201,7 +200,6 @@ class CollectionIndexer():
         do_fork_for_faiss = False  # set to True to free faiss GPU-0 memory at the cost of one more copy of `sample`.
 
         args_ = [self.config.dim, self.num_partitions, self.config.kmeans_niters]
-        print("ARGS IN KMEANS", args_)
         print("DO FORK", do_fork_for_faiss)
         if do_fork_for_faiss:
             # For this to work reliably, write the sample to disk. Pickle may not handle >4GB of data.
