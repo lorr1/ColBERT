@@ -18,7 +18,7 @@ def get_int_id_filepath(filepath, cache_dir):
     # Load index from cache dir
     filepath = Path(filepath)
     all_data = [line.strip().split("\t") for line in open(filepath)]
-    rowidx2origidx = {i: line[0] for i, line in enumerate(all_data)}
+    rowidx2origidx = {str(i): line[0] for i, line in enumerate(all_data)}
     new_data = [[str(i), line[1]] for i, line in enumerate(all_data)]
     print(filepath.stem)
     outfile_path = cache_dir / f"{filepath.stem}_adj.tsv"
@@ -80,8 +80,10 @@ def main(
         queries = Queries(path=query_file)
         console.print(f"Loaded {len(queries)} queries")
         rankings = searcher.search_all(queries, k=topk).todict()
-        rankings_with_origid = {qid: {"orig_id": rowidx2origidx[pid], "pid": pid, "rank": rank, "score": score}
-                                for qid in rankings for pid, rank, score in rankings[qid]}
+        rankings_with_origid = {qid: [] for qid in rankings}
+        for qid in rankings:
+            for pid, rank, score in rankings[qid]:
+                rankings_with_origid[qid].append({"orig_id": rowidx2origidx[str(pid)], "pid": pid, "rank": rank, "score": score})
         log_rankings_file = log_dir / dataset_name / "rankings.pkl"
         log_rankings_file.parent.mkdir(parents=True, exist_ok=True)
         pickle.dump(rankings_with_origid, open(str(log_rankings_file), "wb"))
